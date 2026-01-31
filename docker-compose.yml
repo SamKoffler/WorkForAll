@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: workforall-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-workforall}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workforall}
+      POSTGRES_DB: ${POSTGRES_DB:-workforall}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-workforall}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: workforall-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-workforall}:${POSTGRES_PASSWORD:-workforall}@db:5432/${POSTGRES_DB:-workforall}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      PORT: 3000
+      NODE_ENV: production
+      TELI_ENABLED: ${TELI_ENABLED:-false}
+      TELI_API_KEY: ${TELI_API_KEY:-}
+      TELI_AGENT_ID: ${TELI_AGENT_ID:-}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    container_name: workforall-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:

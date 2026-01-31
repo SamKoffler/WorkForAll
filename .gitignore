@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Prisma
+server/prisma/*.db
+server/prisma/*.db-journal
+
+# Test coverage
+coverage/
+
+# Docker volumes (local)
+postgres_data/
+
+# Misc
+.cache/
+*.tgz

@@ -1,0 +1,311 @@
+// This is your Prisma schema file
+// Learn more at: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - can be either a Worker, Employer, or both
+model User {
+  id              String    @id @default(uuid())
+  email           String?   @unique
+  phone           String?
+  passwordHash    String?
+  name            String
+  userType        UserType  @default(WORKER)
+  
+  // Location
+  latitude        Float?
+  longitude       Float?
+  city            String?
+  zipCode         String?
+  
+  // Worker-specific fields
+  skills          Skill[]   @relation("UserSkills")
+  hasTransportation Boolean @default(false)
+  needsTransportation Boolean @default(true)
+  
+  // Profile
+  bio             String?
+  avatarUrl       String?
+  isVerified      Boolean   @default(false)
+  
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastActiveAt    DateTime  @default(now())
+  
+  // Relations
+  jobsPosted      Job[]     @relation("EmployerJobs")
+  applications    JobApplication[]
+  reviewsGiven    Review[]  @relation("ReviewAuthor")
+  reviewsReceived Review[]  @relation("ReviewSubject")
+  sentMessages    Message[] @relation("MessageSender")
+  receivedMessages Message[] @relation("MessageReceiver")
+  conversations   ConversationParticipant[]
+  notifications   Notification[]
+  
+  // Session tokens for guest users
+  sessionToken    String?   @unique
+  
+  @@index([latitude, longitude])
+  @@index([city])
+  @@index([zipCode])
+}
+
+enum UserType {
+  WORKER
+  EMPLOYER
+  BOTH
+}
+
+// Skill/Tag model
+model Skill {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  category    String   // e.g., "labor", "skilled", "service"
+  icon        String?  // Optional icon name
+  
+  // Relations
+  users       User[]   @relation("UserSkills")
+  jobs        Job[]    @relation("JobSkills")
+  
+  createdAt   DateTime @default(now())
+}
+
+// Job posting model
+model Job {
+  id                    String      @id @default(uuid())
+  title                 String
+  description           String
+  
+  // Pay information
+  payAmount             Float
+  payType               PayType     @default(HOURLY)
+  
+  // Timing
+  durationHours         Float?
+  durationDays          Int?
+  startDate             DateTime
+  endDate               DateTime?
+  startTime             String?     // e.g., "09:00"
+  
+  // Location
+  latitude              Float
+  longitude             Float
+  address               String?
+  city                  String
+  zipCode               String?
+  
+  // Requirements
+  workersNeeded         Int         @default(1)
+  workersHired          Int         @default(0)
+  providesTransportation Boolean    @default(false)
+  
+  // Status
+  status                JobStatus   @default(OPEN)
+  
+  // Relations
+  employer              User        @relation("EmployerJobs", fields: [employerId], references: [id])
+  employerId            String
+  skills                Skill[]     @relation("JobSkills")
+  applications          JobApplication[]
+  
+  // Timestamps
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  @@index([status])
+  @@index([latitude, longitude])
+  @@index([city])
+  @@index([startDate])
+}
+
+enum PayType {
+  HOURLY
+  DAILY
+  FIXED
+}
+
+enum JobStatus {
+  OPEN
+  FILLED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Job Application model
+model JobApplication {
+  id          String              @id @default(uuid())
+  
+  // Relations
+  job         Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       String
+  worker      User                @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  workerId    String
+  
+  // Status
+  status      ApplicationStatus   @default(PENDING)
+  
+  // Message from worker to employer
+  coverNote   String?
+  
+  // Timestamps
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  @@unique([jobId, workerId])
+  @@index([status])
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  COMPLETED
+}
+
+// Review model
+model Review {
+  id          String      @id @default(uuid())
+  
+  // Rating (1-5 stars)
+  rating      Int
+  comment     String?
+  
+  // Who wrote the review
+  author      User        @relation("ReviewAuthor", fields: [authorId], references: [id])
+  authorId    String
+  
+  // Who is being reviewed
+  subject     User        @relation("ReviewSubject", fields: [subjectId], references: [id])
+  subjectId   String
+  
+  // Context
+  reviewType  ReviewType
+  jobId       String?     // Reference to the job this review is about
+  
+  // Timestamps
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  @@unique([authorId, subjectId, jobId])
+  @@index([subjectId])
+  @@index([rating])
+}
+
+enum ReviewType {
+  WORKER_TO_EMPLOYER
+  EMPLOYER_TO_WORKER
+}
+
+// Conversation model for messaging
+model Conversation {
+  id            String                    @id @default(uuid())
+  
+  // Optional job reference
+  jobId         String?
+  
+  // Participants
+  participants  ConversationParticipant[]
+  messages      Message[]
+  
+  // Timestamps
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+}
+
+model ConversationParticipant {
+  id              String        @id @default(uuid())
+  
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId  String
+  
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  
+  // Last read timestamp
+  lastReadAt      DateTime      @default(now())
+  
+  @@unique([conversationId, userId])
+}
+
+// Message model
+model Message {
+  id              String        @id @default(uuid())
+  content         String
+  
+  // Relations
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId  String
+  
+  sender          User          @relation("MessageSender", fields: [senderId], references: [id])
+  senderId        String
+  
+  receiver        User          @relation("MessageReceiver", fields: [receiverId], references: [id])
+  receiverId      String
+  
+  // Status
+  isRead          Boolean       @default(false)
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+// Notification model (Teli-ready)
+model Notification {
+  id              String              @id @default(uuid())
+  
+  // Recipient
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  
+  // Notification details
+  type            NotificationType
+  title           String
+  message         String
+  data            Json?               // Additional data for Teli integration
+  
+  // Delivery status
+  isRead          Boolean             @default(false)
+  deliveryMethod  DeliveryMethod      @default(IN_APP)
+  deliveredAt     DateTime?
+  
+  // Teli-specific fields (for future integration)
+  teliCallId      String?
+  teliStatus      String?
+  
+  // Timestamps
+  createdAt       DateTime            @default(now())
+  
+  @@index([userId, isRead])
+  @@index([type])
+}
+
+enum NotificationType {
+  NEW_JOB_MATCH
+  APPLICATION_RECEIVED
+  APPLICATION_ACCEPTED
+  APPLICATION_REJECTED
+  NEW_MESSAGE
+  JOB_REMINDER
+  REVIEW_RECEIVED
+  JOB_COMPLETED
+}
+
+enum DeliveryMethod {
+  IN_APP
+  SMS
+  VOICE_CALL  // For Teli
+  EMAIL
+}
